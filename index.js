@@ -31,6 +31,14 @@ app.post("/api/sms", async (req, res) => {
   }
 });
 
+app.get('/api/sms', async (req, res) => {
+  try {
+    const messages = await SMS.find().sort({ timestamp: -1 });
+    res.json(messages);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
 app.listen(PORT, () => {

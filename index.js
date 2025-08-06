@@ -1,52 +1,3 @@
-// import dotenv from "dotenv";
-// import express from "express";
-// import connectToMongoDB from "./connect_mongodb.js";
-// import mongoose from "mongoose";
-// import cors from 'cors';
-
-// dotenv.config();
-// const app = express();
-// app.use(express.json());
-// app.use(cors());
-// const PORT = process.env.PORT || 3000;
-
-// console.log("mongo....",process.env.MONGO_URL)
-
-// connectToMongoDB();
-
-// const smsSchema = new mongoose.Schema({
-//   sender: String,
-//   message: String,
-//   timestamp: { type: Date, default: Date.now }
-// });
-
-// const SMS = mongoose.model("SMS", smsSchema);
-
-// app.post("/api/sms", async (req, res) => {
-//   const { sender, message } = req.body;
-//   try {
-//     const sms = new SMS({ sender, message });
-//     await sms.save();
-//     res.status(201).json({ success: true });
-//   } catch (err) {
-//     res.status(500).json({ success: false, error: err.message });
-//   }
-// });
-
-// app.get('/api/sms', async (req, res) => {
-//   try {
-//     const messages = await SMS.find().sort({ timestamp: -1 });
-//     res.json(messages);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
-
-
-// app.listen(PORT, () => {
-//   console.log(`Server running on port ${PORT}`);
-// });
-
 import dotenv from "dotenv";
 import express from "express";
 import connectToMongoDB from "./connect_mongodb.js";
@@ -60,6 +11,13 @@ app.use(express.json());
 app.use(cors());
 const PORT = process.env.PORT || 3000;
 import { v4 as uuidv4 } from "uuid"; // for unique message IDs
+
+
+import authRoutes from "./routes/auth.js";
+// import connectToMongoDB from "./connect_mongodb.js";
+
+connectToMongoDB();
+app.use("/api/auth", authRoutes);
 
 // console.log("mongo....",process.env.MONGO_URI)
 
@@ -75,12 +33,13 @@ import { v4 as uuidv4 } from "uuid"; // for unique message IDs
 
 const redisClient = createClient({
   socket: {
+    // host: "127.0.0.1",
     host: "34.47.189.67",
     port: 6379,
     connectTimeout: 5000,     //  equivalent to socket_connect_timeout
     timeout: 5000             //  equivalent to socket_timeout
   },
-  password: process.env.REDIS_PASS
+  password: process.env.REDIS_PASS || ""
 });
 
 
@@ -92,10 +51,10 @@ const startServer = async () => {
 
   // post
   app.post("/api/sms", async (req, res) => {
-    const { sender, message } = req.body;
+    const { sender, receiver, message } = req.body;
 
-    if (!sender || !message) {
-      return res.status(400).json({ success: false, error: "Sender and message are required" });
+    if (!sender || !receiver || !message) {
+      return res.status(400).json({ success: false, error: "Sender, receiver, and message are required" });
     }
 
     try {
@@ -103,11 +62,12 @@ const startServer = async () => {
       const smsData = {
         id,
         sender,
+        receiver,
         message,
         timestamp: new Date().toISOString()
       };
 
-      // Store each SMS in a separate key with TTL = 7200 seconds (2 hours)
+      // Store with TTL = 2 hours
       await redisClient.setEx(`sms:${id}`, 7200, JSON.stringify(smsData));
 
       res.status(201).json({ success: true });
@@ -117,55 +77,37 @@ const startServer = async () => {
   });
 
 
-  // get
-  // app.get("/api/sms", async (req, res) => {
-  //   try {
-  //     const keys = await redisClient.keys("sms:*"); // get all keys
-  //     const smsList = [];
-
-  //     for (const key of keys) {
-  //       const data = await redisClient.get(key);
-  //       if (data) {
-  //         smsList.push(JSON.parse(data));
-  //       }
-  //     }
-
-  //     res.json(smsList);
-  //   } catch (err) {
-  //     res.status(500).json({ success: false, error: err.message });
-  //   }
-  // });
 
   app.get("/api/sms", async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;       // Default to page 1
-    const limit = parseInt(req.query.limit) || 10;    // Default to 10 items per page
-    const start = (page - 1) * limit;
-    const end = start + limit - 1;
+    try {
+      const page = parseInt(req.query.page) || 1;       // Default to page 1
+      const limit = parseInt(req.query.limit) || 10;    // Default to 10 items per page
+      const start = (page - 1) * limit;
+      const end = start + limit - 1;
 
-    const keys = await redisClient.keys("sms:*");
-    const sortedKeys = keys.sort(); // optional: sort keys (you may want to sort by timestamp if available)
+      const keys = await redisClient.keys("sms:*");
+      const sortedKeys = keys.sort(); // optional: sort keys (you may want to sort by timestamp if available)
 
-    const pageKeys = sortedKeys.slice(start, end + 1);
-    const smsList = [];
+      const pageKeys = sortedKeys.slice(start, end + 1);
+      const smsList = [];
 
-    for (const key of pageKeys) {
-      const data = await redisClient.get(key);
-      if (data) {
-        smsList.push(JSON.parse(data));
+      for (const key of pageKeys) {
+        const data = await redisClient.get(key);
+        if (data) {
+          smsList.push(JSON.parse(data));
+        }
       }
-    }
 
-    res.json({
-      page,
-      limit,
-      total: keys.length,
-      messages: smsList
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+      res.json({
+        page,
+        limit,
+        total: keys.length,
+        messages: smsList
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
 
   // start server
   app.listen(PORT, () => {
@@ -175,27 +117,6 @@ const startServer = async () => {
 
 startServer();
 
-
-
-// app.post("/api/sms", async (req, res) => {
-//   const { sender, message } = req.body;
-//   try {
-//     const sms = new SMS({ sender, message });
-//     await sms.save();
-//     res.status(201).json({ success: true });
-//   } catch (err) {
-//     res.status(500).json({ success: false, error: err.message });
-//   }
-// });
-
-// app.get('/api/sms', async (req, res) => {
-//   try {
-//     const messages = await SMS.find().sort({ timestamp: -1 });
-//     res.json(messages);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
 
 
 // app.listen(PORT, () => {

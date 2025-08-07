@@ -48,6 +48,11 @@ const startServer = async () => {
   await redisClient.connect();
   console.log("✅ Connected to Redis");
 
+    // start server
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
+};
 
   // post
   app.post("/api/sms", async (req, res) => {
@@ -81,42 +86,84 @@ const startServer = async () => {
 
 
 
+  // app.get("/api/sms", async (req, res) => {
+  //   try {
+  //     const page = parseInt(req.query.page) || 1;       // Default to page 1
+  //     const limit = parseInt(req.query.limit) || 10;    // Default to 10 items per page
+  //     const start = (page - 1) * limit;
+  //     const end = start + limit - 1;
+
+  //     const keys = await redisClient.keys("sms:*");
+  //     const sortedKeys = keys.sort(); // optional: sort keys (you may want to sort by timestamp if available)
+
+  //     const pageKeys = sortedKeys.slice(start, end + 1);
+  //     const smsList = [];
+
+  //     for (const key of pageKeys) {
+  //       const data = await redisClient.get(key);
+  //       if (data) {
+  //         smsList.push(JSON.parse(data));
+  //       }
+  //     }
+
+  //     res.json({
+  //       page,
+  //       limit,
+  //       total: keys.length,
+  //       messages: smsList
+  //     });
+  //   } catch (err) {
+  //     res.status(500).json({ success: false, error: err.message });
+  //   }
+  // });
+
   app.get("/api/sms", async (req, res) => {
-    try {
-      const page = parseInt(req.query.page) || 1;       // Default to page 1
-      const limit = parseInt(req.query.limit) || 10;    // Default to 10 items per page
-      const start = (page - 1) * limit;
-      const end = start + limit - 1;
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const senderFilter = (req.query.sender || "").toLowerCase();
+    const receiverFilter = (req.query.receiver || "").toLowerCase();
+    const messageFilter = (req.query.message || "").toLowerCase();
+    // console.log(page,limit,senderFilter,receiverFilter,messageFilter)
 
-      const keys = await redisClient.keys("sms:*");
-      const sortedKeys = keys.sort(); // optional: sort keys (you may want to sort by timestamp if available)
+    const start = (page - 1) * limit;
+    const end = start + limit - 1;
 
-      const pageKeys = sortedKeys.slice(start, end + 1);
-      const smsList = [];
+    const keys = await redisClient.keys("sms:*");
+    const sortedKeys = keys.sort();
 
-      for (const key of pageKeys) {
-        const data = await redisClient.get(key);
-        if (data) {
-          smsList.push(JSON.parse(data));
+    const matchedSmsList = [];
+
+    for (const key of sortedKeys) {
+      const data = await redisClient.get(key);
+      if (data) {
+        const sms = JSON.parse(data);
+        const senderMatch = sms.sender.toLowerCase().includes(senderFilter);
+        const receiverMatch = sms.receiver.toLowerCase().includes(receiverFilter);
+        const messageMatch = sms.message.toLowerCase().includes(messageFilter);
+
+        if (senderMatch && receiverMatch && messageMatch) {
+          matchedSmsList.push(sms);
         }
       }
-
-      res.json({
-        page,
-        limit,
-        total: keys.length,
-        messages: smsList
-      });
-    } catch (err) {
-      res.status(500).json({ success: false, error: err.message });
     }
-  });
 
-  // start server
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-  });
-};
+    const paginated = matchedSmsList.slice(start, end + 1);
+
+    res.json({
+      page,
+      limit,
+      total: matchedSmsList.length,
+      messages: paginated,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+
+
 
 startServer();
 

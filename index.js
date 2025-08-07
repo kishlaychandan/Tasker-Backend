@@ -51,7 +51,10 @@ const startServer = async () => {
 
   // post
   app.post("/api/sms", async (req, res) => {
+
+
     const { sender, receiver, message } = req.body;
+    console.log(sender,receiver,message);
 
     if (!sender || !receiver || !message) {
       return res.status(400).json({ success: false, error: "Sender, receiver, and message are required" });
